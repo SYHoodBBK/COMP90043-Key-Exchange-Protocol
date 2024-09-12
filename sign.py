@@ -1,170 +1,135 @@
+#!/usr/bin/env python3
 
 import hashlib
+import random
 
-# 常量定义
-b = 256
-q = 2**255 - 19
-l = 2**252 + 27742317777372353535851937790883648493
-
-# 哈希函数，使用 SHA-512
-
-
-def H(m):
-  return hashlib.sha512(m).digest()
-
-# 模幂运算函数
+# prime = 57896044618658097711785492504343953926634992332820282019728792003956564819949L
+# Fp = 2^255 - 19
+p = pow(2, 255) - 19
+# G Point
+base_point = 15112221349535400772501151409588531511454012693041857206046113283949847762202, 46316835694926478169428394003475163141307993866256225615783033603165251855960
 
 
-def expmod(b, e, m):
-  if e == 0:
-    return 1
-  t = expmod(b, e/2, m)**2 % m
-  if e & 1:
-    t = (t*b) % m
-  return t
-
-# 求逆元函数
+def modulus(a, p):
+	return a % p
 
 
-def inv(x):
-  return expmod(x, q-2, q)
+def gcd(a, b):
+    while a != 0:
+        a, b = b % a, a
+    return b
+
+# modular inverse of a mod m
 
 
-# 常量 d 和 I 的定义
-d = -121665 * inv(121666)
-I = expmod(2, (q-1)/4, q)
+def mod_inverse(a, m):
+	a = modulus(a, m)
 
-# 根据 y 坐标恢复 x 坐标
+	if gcd(a, m) != 1:
+		return None  # no mod inverse if a & m aren't relatively prime
 
+	# Calculate using the Extended Euclidean Algorithm:
+	u1, u2, u3 = 1, 0, a
+	v1, v2, v3 = 0, 1, m
+	while v3 != 0:
+		q = u3 // v3  # // is the integer division operator
+		v1, v2, v3, u1, u2, u3 = (u1 - q * v1), (u2 - q *
+                                           v2), (u3 - q * v3), v1, v2, v3
+	return u1 % m
 
-def xrecover(y):
-  xx = (y*y-1) * inv(d*y*y+1)
-  x = expmod(xx, (q+3)/8, q)
-  if (x*x - xx) % q != 0:
-    x = (x*I) % q
-  if x % 2 != 0:
-    x = q-x
-  return x
-
-
-# 基点 B 的定义
-By = 4 * inv(5)
-Bx = xrecover(By)
-B = [Bx % q, By % q]
-
-# Edwards 曲线加法
+# P + Q = R
+# x3 = (x1*y2 + y1*x2)/(1 + d*x1*x2*y1*y2)
+# y3 = (y1*y2 - a*x1*x2)/(1 - d*x1*x2*y1*y2)
 
 
-def edwards(P, Q):
-  x1 = P[0]
-  y1 = P[1]
-  x2 = Q[0]
-  y2 = Q[1]
-  x3 = (x1*y2+x2*y1) * inv(1+d*x1*x2*y1*y2)
-  y3 = (y1*y2+x1*x2) * inv(1-d*x1*x2*y1*y2)
-  return [x3 % q, y3 % q]
+def point_addition(P, Q, a, d, mod):
+    x1 = P[0]
+    y1 = P[1]
+    x2 = Q[0]
+    y2 = Q[1]
+    x3 = modulus(modulus(x1*y2 + y1*x2, mod) *
+                 mod_inverse(1 + d*x1*x2*y1*y2, mod), mod)
+    y3 = modulus(modulus(y1*y2 - a*x1*x2, mod) *
+                 mod_inverse(1 - d*x1*x2*y1*y2, mod), mod)
+    return x3, y3
 
-# 标量乘法
-
-
-def scalarmult(P, e):
-  if e == 0:
-    return [0, 1]
-  Q = scalarmult(P, e/2)
-  Q = edwards(Q, Q)
-  if e & 1:
-    Q = edwards(Q, P)
-  return Q
-
-# 编码整数
+# k*G = k*P = R
 
 
-def encodeint(y):
-  bits = [(y >> i) & 1 for i in range(b)]
-  return ''.join([chr(sum([bits[i * 8 + j] << j for j in range(8)])) for i in range(b/8)])
+def point_scalar_multiplication(k, P, a, d, mod):
 
-# 编码点
+	addition_point = (P[0], P[1])
 
+	k_binary = bin(k)  # 0b1111111001
+	k_binary = k_binary[2:len(k_binary)]  # 1111111001
 
-def encodepoint(P):
-  x = P[0]
-  y = P[1]
-  bits = [(y >> i) & 1 for i in range(b - 1)] + [x & 1]
-  return ''.join([chr(sum([bits[i * 8 + j] << j for j in range(8)])) for i in range(b/8)])
+	for i in range(1, len(k_binary)):
+		current_bit = k_binary[i: i+1]
+		# always apply doubling: 2*P
+		addition_point = point_addition(addition_point, addition_point, a, d, mod)
 
-# 获取哈希值的第 i 位
+		if current_bit == '1':
+			# add base point
+			addition_point = point_addition(addition_point, P, a, d, mod)
 
-
-def bit(h, i):
-  return (ord(h[i/8]) >> (i % 8)) & 1
-
-# 生成公钥
+	return addition_point
 
 
-def publickey(sk):
-  h = H(sk)
-  a = 2**(b-2) + sum(2**i * bit(h, i) for i in range(3, b-2))
-  A = scalarmult(B, a)
-  return encodepoint(A)
-
-# 哈希整数
+def text_to_int(text):
+	encoded_text = text.encode('utf-8')
+	hex_text = encoded_text.hex()
+	int_text = int(hex_text, 16)
+	return int_text
 
 
-def Hint(m):
-  h = H(m)
-  return sum(2**i * bit(h, i) for i in range(2*b))
-
-# 生成签名
+def hashing(message):
+	return int(hashlib.sha512(str(message).encode("utf-8")).hexdigest(), 16)
 
 
-def signature(m, sk, pk):
-  h = H(sk)
-  a = 2**(b-2) + sum(2**i * bit(h, i) for i in range(3, b-2))
-  r = Hint(''.join([h[i] for i in range(b/8, b/4)]) + m)
-  R = scalarmult(B, r)
-  S = (r + Hint(encodepoint(R) + pk + m) * a) % l
-  return encodepoint(R) + encodeint(S)
+# Ed25519's Twisted Edwards Curve
+# a*x^2 + y^2  = 1 + d*x^2*y^2 where a = -1 and d = -121665/121666 = -121665*(1/121666) = -121665*Inverse(121666)
+a = -1
+d = modulus(-121665 * mod_inverse(121666, p), p)
 
-# 检查点是否在曲线上
+private_key = random.getrandbits(256)  # 32 byte secret key
+public_key = point_scalar_multiplication(private_key, base_point, a, d, p)
 
+# Signing Message
+message = text_to_int("MathxH Chen")
+# Generating random key based on the hash of the message.
+# In this way, every message has a different random key.
+r = modulus(hashing(hashing(message) + message), p)
+# Random key times(r) base point will be random point R and it is a type of curve point.
+# Extracting secret random key r from known random point R is a really hard problem(ECDLP)
+R = point_scalar_multiplication(r, base_point, a, d, p)
+# combination of the random point(R) x-coordinate, public key x-coordinate and the message will be stored in the variable h after hashing.
+# This can be calculated by receiver party, too
+h = modulus(hashing(R[0] + public_key[0] + message), p)
+s = (r + h * private_key)
 
-def isoncurve(P):
-  x = P[0]
-  y = P[1]
-  return (-x*x + y*y - 1 - d*x*x*y*y) % q == 0
+# Verify Signature of the message
 
-# 解码整数
+# R[0] is random point(R) x-coordinate
+# public_key[0] is public key point x-coordinate
+h = modulus(hashing(R[0] + public_key[0] + message), p)
+P1 = point_scalar_multiplication(s, base_point, a, d, p)
+P2 = point_addition(R, point_scalar_multiplication(
+	h, public_key, a, d, p), a, d, p)
 
+# P1 = P2
+if P1[0] == P2[0] and P1[1] == P2[1]:
+	print("signature MathxH Chen valid")
+else:
+	print("signature MathxH Chen invaid")
 
-def decodeint(s):
-  return sum(2**i * bit(s, i) for i in range(0, b))
+# message changed by attacker
+message = text_to_int("Lynn Lee")
+h = modulus(hashing(R[0] + public_key[0] + message), p)
+P1 = point_scalar_multiplication(s, base_point, a, d, p)
+P2 = point_addition(R, point_scalar_multiplication(
+	h, public_key, a, d, p), a, d, p)
 
-# 解码点
-
-
-def decodepoint(s):
-  y = sum(2**i * bit(s, i) for i in range(0, b-1))
-  x = xrecover(y)
-  if x & 1 != bit(s, b-1):
-    x = q-x
-  P = [x, y]
-  if not isoncurve(P):
-    raise Exception("decoding point that is not on curve")
-  return P
-
-# 验证签名
-
-
-def checkvalid(s, m, pk):
-  if len(s) != b/4:
-    raise Exception("signature length is wrong")
-  if len(pk) != b/8:
-    raise Exception("public-key length is wrong")
-  R = decodepoint(s[0:b/8])
-  A = decodepoint(pk)
-  S = decodeint(s[b/8:b/4])
-  h = Hint(encodepoint(R) + pk + m)
-  if scalarmult(B, S) != edwards(R, scalarmult(A, h)):
-    raise Exception("signature does not pass verification")
-
-
+if P1[0] == P2[0] and P1[1] == P2[1]:
+	print("signature MathxH Chen valid")
+else:
+	print("signature MathxH Chen invaid")
