@@ -29,6 +29,8 @@ the same names.
 # where P = 2**255-19 and A = 486662
 
 import os
+import hashlib
+
 P = 2 ** 255 - 19
 _A = 486662
 
@@ -161,3 +163,7 @@ def generateKey():
     print("Public Key:", public_key_bytes.hex())
 
     return private_key_bytes, public_key_bytes
+
+
+def sign_prekey(IKB_public_bytes, SPKB_public_bytes):
+    en

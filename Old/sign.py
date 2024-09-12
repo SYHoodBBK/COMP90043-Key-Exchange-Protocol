@@ -94,6 +94,10 @@ d = modulus(-121665 * mod_inverse(121666, p), p)
 private_key = random.getrandbits(256)  # 32 byte secret key
 public_key = point_scalar_multiplication(private_key, base_point, a, d, p)
 
+private_key = 30556489615831614089964895004708150062492616274899789558508508418377194326322
+public_key = point_scalar_multiplication(private_key, base_point, a, d, p)
+print("public_key: ", public_key)
+
 # Signing Message
 message = text_to_int("MathxH Chen")
 # Generating random key based on the hash of the message.
