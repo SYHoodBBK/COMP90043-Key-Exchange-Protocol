@@ -153,7 +153,9 @@ def construct_initial_message(shared_secret, prekey_bundle, opk_id):
     try:
         # Construct the initial message
         message = "Hello, Bob!"
-        ad = ik_A_public.encode() + prekey_bundle["ik_B_public"].encode()
+        ik_B_public_hex = prekey_bundle["ik_B_public"]
+        ik_B_public = PublicKey(ik_B_public_hex, encoder=HexEncoder)
+        ad = ik_A_public.encode() + ik_B_public.encode()
         nonce_hex, ciphertext_hex = encrypt_message(shared_secret, ad, message)
 
         initial_message = {
