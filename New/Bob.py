@@ -221,15 +221,36 @@ def compute_shared_secret(message):
 
     return shared_secret_bytes
 
+def decrypt_message(message):
+    # Extract the message components
+    nonce = bytes.fromhex(message["nonce"])
+    ciphertext = bytes.fromhex(message["ciphertext"])
+    ik_A_public_hex = message["ik_A_public"]
+    ik_A_public = PublicKey(ik_A_public_hex, encoder=HexEncoder)
+
+    # Calculate the additional data
+    ad = ik_A_public.encode() + ik_B_public.encode()
+
+    # Create a ChaCha20Poly1305 cipher using the shared secret
+    cipher = ChaCha20Poly1305(shared_secret)
+
+    # Decrypt the message
+    decrypted_message = cipher.decrypt(nonce, ciphertext, ad)
+    print("Decrypted message:", decrypted_message.decode('utf-8'))
+
+    return decrypted_message
+
 if __name__ == '__main__':
     send_prekey_bundle_to_server()
     while True:
         user_input = input("Enter 'get' to retrieve messages or 'exit' to quit: ")
         if user_input.lower() == 'get':
-            messages = request_message_from_server()  # 获取消息
+            messages = request_message_from_server()
             if messages:
                 print(f"Messages received: {messages}")
-                compute_shared_secret(messages[0])
+                shared_secret = compute_shared_secret(messages[0])
+                if shared_secret:
+                    decrypted_message = decrypt_message(messages[0])
         elif user_input.lower() == 'exit':
             print("Exiting Bob.")
             break
