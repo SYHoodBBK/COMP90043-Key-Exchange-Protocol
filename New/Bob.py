@@ -51,10 +51,10 @@ def load_keys():
             ik_B_private = SigningKey(bytes.fromhex(key_data["ik_B_private"]))
             ik_B_public = VerifyKey(bytes.fromhex(key_data["ik_B_public"]))
             spk_B_private = PrivateKey(bytes.fromhex(key_data["spk_B_private"]))
-            spk_B_public = PrivateKey(bytes.fromhex(key_data["spk_B_public"]))
+            spk_B_public = PublicKey(bytes.fromhex(key_data["spk_B_public"]))
             signature_B = ik_B_private.sign(spk_B_public.encode())
             opk_B_private = [PrivateKey(bytes.fromhex(k)) for k in key_data["opk_B_private"]]
-            opk_B_public = [PrivateKey(bytes.fromhex(k)).public_key for k in key_data["opk_B_public"]]
+            opk_B_public = [PublicKey(bytes.fromhex(k)) for k in key_data["opk_B_public"]]
 
             return ik_B_private, ik_B_public, spk_B_private, spk_B_public, signature_B, opk_B_private, opk_B_public
     else:
@@ -81,10 +81,10 @@ bob_prekey_bundle = {
 }
 
 # Output the bundle
-# print('Bob\'s Identity Key:', bob_prekey_bundle['identity_key'])
-# print('Bob\'s Signed Prekey:', bob_prekey_bundle['signed_prekey'])
-# print('Bob\'s Signature:', bob_prekey_bundle['signature'])
-# print('Bob\'s One-time Prekeys:', bob_prekey_bundle['one_time_prekeys'])
+print('Bob\'s Identity Key:', bob_prekey_bundle['identity_key'])
+print('Bob\'s Signed Prekey:', bob_prekey_bundle['signed_prekey'])
+print('Bob\'s Signature:', bob_prekey_bundle['signature'])
+print('Bob\'s One-time Prekeys:', bob_prekey_bundle['one_time_prekeys'])
 
 def send_prekey_bundle_to_server():
     server_host = 'localhost'
@@ -191,10 +191,10 @@ def compute_shared_secret(message):
     # Convert Bob's private keys to the appropriate format
     # ik_B_private = PrivateKey(ik_B_private, encoder=HexEncoder)
 
-    print(f"ik_A_public: {ik_A_public.encode().hex()}")
-    print(f"ek_A_public: {ek_A_public.encode().hex()}")
-    print(f"ik_B_private: {ik_B_private.encode().hex()}")
-    print(f"spk_B_private: {spk_B_private.encode().hex()}")
+    # print(f"ik_A_public: {ik_A_public.encode().hex()}")
+    # print(f"ek_A_public: {ek_A_public.encode().hex()}")
+    # print(f"ik_B_private: {ik_B_private.encode().hex()}")
+    # print(f"spk_B_private: {spk_B_private.encode().hex()}")
 
 
     # compute the Diffie-Hellman values and combine them

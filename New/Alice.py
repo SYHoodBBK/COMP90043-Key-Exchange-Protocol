@@ -63,16 +63,16 @@ def compute_shared_secret(prekey_bundle):
         print("Received Bob's public keys and signature")
 
         # Convert Bob's public keys and signature to the appropriate format
-        ik_B_public = PublicKey(ik_B_public_hex, encoder=HexEncoder)
+        ik_B_public = VerifyKey(ik_B_public_hex, encoder=HexEncoder)
         print(f'ik_B_public: {ik_B_public.encode().hex()}')
         spk_B_public = PublicKey(spk_B_public_hex, encoder=HexEncoder)
         signature_B = bytes.fromhex(signature_B_hex)
 
         # Verify Bob's signed prekey signature
         try:
-            ik_B_verify = VerifyKey(ik_B_public_hex, encoder=HexEncoder)
-            print(f'ik_B_verify: {ik_B_verify.encode().hex()}')
-            ik_B_verify.verify(spk_B_public.encode(), signature_B)
+            # ik_B_verify = VerifyKey(ik_B_public_hex, encoder=HexEncoder)
+            print(f'ik_B_verify: {ik_B_public.encode().hex()}')
+            ik_B_public.verify(spk_B_public.encode(), signature_B)
             print("Signature verification successful")
         except Exception as e:
             print(f"Signature verification failed: {e}")
@@ -95,7 +95,7 @@ def compute_shared_secret(prekey_bundle):
 
         # compute the Diffie-Hellman values and combine them
         dh1 = Box(ik_A_private, spk_B_public).shared_key()
-        dh2 = Box(ek_A_private, ik_B_public).shared_key()
+        dh2 = Box(ek_A_private, ik_B_public.to_curve25519_public_key()).shared_key()
         dh3 = Box(ek_A_private, spk_B_public).shared_key()
         # Compute the shared key by combining the Diffie-Hellman values
         dh_values = dh1 + dh2 + dh3
