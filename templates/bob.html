@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bob's Messaging App</title>
+    <style>
+        #messageInput, #sendButton {
+            display: none;
+        }
+        #messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Bob's Messaging App</h1>
+    <div id="messages"></div>
+    <input type="text" id="messageInput" placeholder="Enter your message">
+    <button id="sendButton">Send Message</button>
+
+    <script>
+        let showInput = {{ show_input|tojson }};
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+
+        function displayMessages(messages) {
+            messages.forEach(function(message) {
+                var p = document.createElement('p');
+                p.textContent = `${message.sender}: ${message.message}`;
+                messagesDiv.appendChild(p);
+            });
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function checkMessages() {
+            fetch('/check_messages')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    displayMessages(data.messages);
+                    if (data.show_input && !showInput) {
+                        showInput = true;
+                        messageInput.style.display = 'inline-block';
+                        sendButton.style.display = 'inline-block';
+                    }
+                } else {
+                    console.log(data.message);
+                }
+            });
+        }
+
+        // Display initial messages
+        displayMessages({{ messages|tojson }});
+
+        // Check for new messages every 5 seconds
+        setInterval(checkMessages, 5000);
+
+        sendButton.addEventListener('click', function() {
+            const message = messageInput.value;
+            fetch('/send_message', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'message=' + encodeURIComponent(message)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    messageInput.value = '';
+                    displayMessages([{sender: 'Bob', message: message}]);
+                } else {
+                    console.log(data.message);
+                }
+            });
+        });
+
+        // Show input if initial message has been received
+        if (showInput) {
+            messageInput.style.display = 'inline-block';
+            sendButton.style.display = 'inline-block';
+        }
+    </script>
+</body>
+
+</html>

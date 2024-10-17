@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alice's Messaging App</title>
+    <style>
+        #messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Alice's Messaging App</h1>
+    <div id="messages"></div>
+    <form id="messageForm">
+        <input type="text" id="messageInput" placeholder="Enter your message">
+        <button type="submit">Send Message</button>
+    </form>
+    <div id="status"></div>
+
+    <script>
+        const messagesDiv = document.getElementById('messages');
+        const messageForm = document.getElementById('messageForm');
+        const messageInput = document.getElementById('messageInput');
+        const statusDiv = document.getElementById('status');
+
+        function displayMessages(messages) {
+            messages.forEach(function(message) {
+                var p = document.createElement('p');
+                p.textContent = `${message.sender}: ${message.message}`;
+                messagesDiv.appendChild(p);
+            });
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function checkMessages() {
+            fetch('/check_messages')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    displayMessages(data.messages);
+                } else {
+                    console.log(data.message);
+                }
+            });
+        }
+
+        // Display initial messages
+        displayMessages({{ messages|tojson }});
+
+        // Check for new messages every 5 seconds
+        setInterval(checkMessages, 5000);
+
+        messageForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var message = messageInput.value;
+            fetch('/send_message', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'message=' + encodeURIComponent(message)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    messageInput.value = '';
+                    displayMessages([{sender: 'Alice', message: message}]);
+                    statusDiv.innerText = data.message;
+                } else {
+                    statusDiv.innerText = data.message;
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
