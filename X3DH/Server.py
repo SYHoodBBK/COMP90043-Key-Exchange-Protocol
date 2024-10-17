@@ -1,24 +1,16 @@
-import socket
-import threading
+import asyncio
+import websockets
 import json
-import signal
-import sys
 
-
-# Store requests in a global dictionary
+# Store requests in global dictionaries
 keys_store = {}
 messages_store = {}
 
-def handle_client(client_socket):
+async def handle_client(websocket, path):
     """Handle a client connection"""
     try:
-        while True:
-            # Receive the request
-            data = client_socket.recv(4096).decode('utf-8')
-            if not data.strip():  # 如果接收到的是空数据，提前返回
-                print("Received empty request")
-                return
-            request = json.loads(data)
+        async for message in websocket:
+            request = json.loads(message)
             print(f"Received request: {request}")
 
             # Process the request
@@ -76,51 +68,25 @@ def handle_client(client_socket):
                 else:
                     response = {
                         "status": "error",
-                        "message": "User not found"
+                        "message": "No messages found"
                     }
-            elif request["action"] == "disconnect":
-                response = {
-                    "status": "success",
-                    "message": "Closing connection"
-                }
-                break
             else:
                 response = {
                     "status": "error",
                     "message": "Invalid action"
                 }
+            
             # Send the response
-            response = json.dumps(response).encode('utf-8')
-            client_socket.sendall(response)
+            await websocket.send(json.dumps(response))
             print(f"Sent response: {response}")
-    except Exception as e:
-        print(f"Error processing request: {e}")
-    # finally:
-    #     client_socket.close()
+    except websockets.exceptions.ConnectionClosed:
+        print("Client disconnected")
 
-def start_server(host='localhost', port=65432):
-    """Start the server"""
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((host, port))
-    server.listen(5)
-    server.settimeout(1)
-
-    print(f"Server listening on {host}:{port}...")
-
-    try:
-        while True:
-            try:
-                client_socket, client_address = server.accept()
-                print(f"Connection from {client_address}")
-                client_thread = threading.Thread(target=handle_client, args=(client_socket,))
-                client_thread.start()
-            except socket.timeout:
-                continue
-    except KeyboardInterrupt:
-        print("\nServer is shutting down...")
-    finally:
-        server.close()
-        sys.exit(0)
+async def start_server(port=23456):
+    """Start the WebSocket server"""
+    server = await websockets.serve(handle_client, "0.0.0.0", port)
+    print(f"Server listening on ws://0.0.0.0:{port}")
+    await server.wait_closed()
 
 if __name__ == "__main__":
-    start_server()
+    asyncio.run(start_server())

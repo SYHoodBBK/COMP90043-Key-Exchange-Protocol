@@ -1,7 +1,7 @@
 # DoubleRatchetParticipant.py
 
-import socket
-import threading
+import asyncio
+import websockets
 from functions import *
 from cryptography.hazmat.primitives import serialization
 
@@ -27,6 +27,7 @@ class DoubleRatchetParticipant:
 
     def ratchet_encrypt(self, plaintext):
         state = self.state
+        ratchet_performed = False
         # Check if we need to perform a send ratchet step
         if state.need_send_ratchet:
             # Perform send ratchet step
@@ -37,6 +38,7 @@ class DoubleRatchetParticipant:
             dh_out = DH(state.DHs, state.DHr)
             state.RK, state.CKs = KDF_RK(state.RK, dh_out)
             state.need_send_ratchet = False  # Reset the flag
+            ratchet_performed = True
 
         # Derive message key
         if state.CKs is None:
@@ -56,10 +58,11 @@ class DoubleRatchetParticipant:
         state.Ns += 1
 
         # Return header and ciphertext
-        return header, ciphertext
+        return header, ciphertext, ratchet_performed
 
     def ratchet_decrypt(self, header, ciphertext):
         state = self.state
+        ratchet_performed = False
         # Compare DH public keys
         if state.DHr is None or header.dh.public_bytes(
                 encoding=serialization.Encoding.Raw,
@@ -75,6 +78,7 @@ class DoubleRatchetParticipant:
             state.DHr = header.dh
             dh_out = DH(state.DHs, state.DHr)
             state.RK, state.CKr = KDF_RK(state.RK, dh_out)
+            ratchet_performed = True
             print(f'{self.name}: Performing a receive ratchet step')
 
         # Derive message key
@@ -91,19 +95,16 @@ class DoubleRatchetParticipant:
         # Update state
         state.Nr += 1
 
-        return plaintext
+        return plaintext, ratchet_performed
 
-    def handle_receive(self, sock):
-        while True:
-            try:
-                # First, receive the header length
-                header_length_bytes = sock.recv(4)
-                if not header_length_bytes:
-                    break
-                header_length = int.from_bytes(header_length_bytes, 'big')
-
-                # Then receive the header
-                header_bytes = sock.recv(header_length)
+    async def handle_receive(self, websocket):
+        try:
+            async for message in websocket:
+                # Deserialize the message
+                header_length = int.from_bytes(message[:4], 'big')
+                header_bytes = message[4:4+header_length]
+                ciphertext_length = int.from_bytes(message[4+header_length:8+header_length], 'big')
+                ciphertext = message[8+header_length:]
 
                 # Deserialize the header
                 dh_pub_bytes = header_bytes[:32]
@@ -114,31 +115,16 @@ class DoubleRatchetParticipant:
                 n = int.from_bytes(n_bytes, 'big')
                 header = Header(dh_pub, pn, n)
 
-                # Now receive the ciphertext length
-                ciphertext_length_bytes = sock.recv(4)
-                if not ciphertext_length_bytes:
-                    break
-                ciphertext_length = int.from_bytes(ciphertext_length_bytes, 'big')
-
-                # Now receive the ciphertext
-                ciphertext = b''
-                while len(ciphertext) < ciphertext_length:
-                    chunk = sock.recv(ciphertext_length - len(ciphertext))
-                    if not chunk:
-                        break
-                    ciphertext += chunk
-
                 # Decrypt the message
                 plaintext = self.ratchet_decrypt(header, ciphertext)
                 print(f'{self.name} received:', plaintext.decode())
 
-            except Exception as e:
-                print('Receive error:', e)
-                break
+        except websockets.exceptions.ConnectionClosed:
+            print("WebSocket connection closed")
 
-    def send_messages(self, sock):
+    async def send_messages(self, websocket):
         while True:
-            message = input(f'{self.name}: ')
+            message = await asyncio.get_event_loop().run_in_executor(None, input, f'{self.name}: ')
             if message == '':
                 continue
             plaintext = message.encode()
@@ -152,13 +138,9 @@ class DoubleRatchetParticipant:
             ciphertext_length = len(ciphertext).to_bytes(4, 'big')
 
             # Send header length, header, ciphertext length, ciphertext
-            sock.sendall(header_length + header_bytes +
-                         ciphertext_length + ciphertext)
+            await websocket.send(header_length + header_bytes + ciphertext_length + ciphertext)
 
-    def start_communication(self, sock):
-        # Start a thread to handle receiving messages
-        threading.Thread(target=self.handle_receive, args=(sock,)).start()
-
-        # Now send messages
-        self.send_messages(sock)
-
+    async def start_communication(self, websocket):
+        receive_task = asyncio.create_task(self.handle_receive(websocket))
+        send_task = asyncio.create_task(self.send_messages(websocket))
+        await asyncio.gather(receive_task, send_task)

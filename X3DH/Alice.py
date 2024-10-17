@@ -1,4 +1,5 @@
-import socket
+import asyncio
+import websockets
 import json
 from nacl.public import PrivateKey, PublicKey, Box
 from nacl.signing import VerifyKey
@@ -7,50 +8,52 @@ from nacl.encoding import HexEncoder
 from nacl.utils import random
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
-from DoubleRatchetParticipant import DoubleRatchetParticipant, RatchetState
-from functions import GENERATE_DH, x25519, serialization
+from cryptography.hazmat.primitives.asymmetric import x25519
 
+# Generate Alice's identity key pair
+ik_A_private = PrivateKey.generate()
+ik_A_public = ik_A_private.public_key
+
+# Generate Alice's ephemeral key pair
+ek_A_private = PrivateKey.generate()
+ek_A_public = ek_A_private.public_key
+
+# Define the server host and port
+server_host = 'localhost'
+server_port = 23456
 
 share_SK = None
 share_AD = None
 share_SPKB = None
-private_key = None
+private_key = ik_A_private
 
-# Connect to the server to request Bob's prekey bundle
-def request_prekey_bundle(client_socket):
+async def request_prekey_bundle(websocket):
     try:
         # Send the request to the server
         request = json.dumps({
             "action": "get_key",
             "user_id": "Bob"
         })
-        client_socket.sendall(request.encode('utf-8'))
+        await websocket.send(request)
         print("Sent request to server")
 
         # Receive the response
-        response = client_socket.recv(4096).decode('utf-8')
+        response = await websocket.recv()
         response = json.loads(response)
         print(f"Received response: {response}")
         if response["status"] == "success":
             return response["prekey_bundle"]
         else:
             print(f"Error: {response['message']}")
-
-        close_message = json.dumps({
-            "action": "disconnect"
-        })
-
-        client_socket.sendall(close_message.encode('utf-8'))
-        print("Sent disconnect message to server")
+            return None
 
     except Exception as e:
         print(f"Error requesting prekey bundle: {e}")
-    # finally:
-    #     client_socket.close()
+        return None
 
 # Process Bob's prekey bundle
 def compute_shared_secret(prekey_bundle):
-    global share_SK, share_AD, share_SPKB, private_key
+    global share_SPKB
     try:
         # Extract Bob's public keys and signature from the prekey bundle
         ik_B_public_hex = prekey_bundle["ik_B_public"]
@@ -65,7 +68,7 @@ def compute_shared_secret(prekey_bundle):
         print(f'ik_B_public: {ik_B_public.encode().hex()}')
         spk_B_public = PublicKey(spk_B_public_hex, encoder=HexEncoder)
         signature_B = bytes.fromhex(signature_B_hex)
-        print("Bob的公钥: ", ik_B_public.encode().hex())
+
         share_SPKB = spk_B_public
 
         # Verify Bob's signed prekey signature
@@ -124,12 +127,15 @@ def compute_shared_secret(prekey_bundle):
 
 # Encrypt the initial message
 def encrypt_message(shared_secret, ad, message):
+    global share_SK, share_AD
     try:
         # ChaCha20-Poly1305 expects a 32-byte key (256-bit)
         if len(shared_secret) != 32:
             print(f'len(shared_key): {len(shared_secret)}')
             raise ValueError("ChaCha20-Poly1305 requires a 32-byte key.")
         
+        share_SK = shared_secret
+        share_AD = ad
         # Generate a random nonce
         nonce = random(12)
         # print(f"Nonce: {nonce.hex()}")
@@ -149,15 +155,13 @@ def encrypt_message(shared_secret, ad, message):
         print(f"Error encrypting message: {e}")
 
 # Construct the initial message
-def construct_initial_message(shared_secret, prekey_bundle, opk_id, message):
-    global share_SK, share_AD, share_SPKB, private_key
+def construct_initial_message(shared_secret, prekey_bundle, opk_id):
     try:
         # Construct the initial message
-
+        message = "Hello, Bob!"
         ik_B_public_hex = prekey_bundle["ik_B_public"]
         ik_B_public = PublicKey(ik_B_public_hex, encoder=HexEncoder)
         ad = ik_A_public.encode() + ik_B_public.encode()
-        share_AD = ad
         nonce_hex, ciphertext_hex = encrypt_message(shared_secret, ad, message)
 
         initial_message = {
@@ -173,8 +177,7 @@ def construct_initial_message(shared_secret, prekey_bundle, opk_id, message):
     except Exception as e:
         print(f"Error constructing initial message: {e}")
 
-# Send the initial message to Bob
-def send_initial_message(client_socket, initial_message):
+async def send_initial_message(websocket, initial_message):
     try:
         message_data = {
             "action": "send_message",
@@ -183,111 +186,72 @@ def send_initial_message(client_socket, initial_message):
         }
 
         message_data = json.dumps(message_data)
-        client_socket.sendall(message_data.encode('utf-8'))
+        await websocket.send(message_data)
         print("Sent initial message to Server...")
 
         # Receive the response
-        server_response  = client_socket.recv(4096).decode('utf-8')
-        server_response  = json.loads(server_response)
+        server_response = await websocket.recv()
+        server_response = json.loads(server_response)
         print(f"Received response: {server_response}")
-
-        close_message = json.dumps({
-            "action": "disconnect"
-        })
-
-        client_socket.sendall(close_message.encode('utf-8'))
-        print("Sent disconnect message to server")
 
         return server_response
     except Exception as e:
         print(f"Error sending initial message: {e}")
-    # finally:
-    #     client_socket.close()
+        return None
 
+async def main():
+    uri = f"ws://{server_host}:{server_port}"
+    async with websockets.connect(uri) as websocket:
+        print(f"Connected to server at {uri}")
 
-def convert_private_key(private_key):
+        # Request Bob's prekey bundle from the server
+        prekey_bundle = await request_prekey_bundle(websocket)
+        if prekey_bundle:
+            # Compute the shared secret with Bob
+            shared_secret, opk_id = compute_shared_secret(prekey_bundle)
+            if shared_secret:
+                # Construct the initial message
+                ciphertext = construct_initial_message(shared_secret, prekey_bundle, opk_id)
+                if ciphertext:
+                    # Send the initial message to Bob
+                    server_response = await send_initial_message(websocket, ciphertext)
+                    if server_response:
+                        print("Alice's initial message sent to Bob")
+
+async def get_alice_info():
+    
+    uri = f"ws://{server_host}:{server_port}"
+    async with websockets.connect(uri) as websocket:
+        print(f"Connected to server at {uri}")
+
+        # Request Bob's prekey bundle from the server
+        prekey_bundle = await request_prekey_bundle(websocket)
+        if prekey_bundle:
+            # Compute the shared secret with Bob
+            shared_secret, opk_id = compute_shared_secret(prekey_bundle)
+            if shared_secret:
+                # Construct the initial message
+                ciphertext = construct_initial_message(
+                    shared_secret, prekey_bundle, opk_id)
+                if ciphertext:
+                    # Send the initial message to Bob
+                    server_response = await send_initial_message(websocket, ciphertext)
+                    if server_response:
+                        print("Alice's initial message sent to Bob")
     # private_key is generate by PrivateKey.generate()
     # need to convert to x25519.X25519PrivateKey.generate()
     private_key_bytes = private_key.encode()
     x25519_private_key = x25519.X25519PrivateKey.from_private_bytes(
         private_key_bytes)
-    return x25519_private_key
-
-
-def convert_SPKB(public_key):
-    # public_key is generate by PublicKey(ik_A_public_hex, encoder=HexEncoder)
+    
+    # SPKB is generate by PublicKey(ik_A_public_hex, encoder=HexEncoder)
     # need to convert to x25519.X25519PublicKey
-    public_key_bytes = public_key.encode()
+    spkb = share_SPKB.encode()
     x25519_public_key = x25519.X25519PublicKey.from_public_bytes(
-        public_key_bytes)
+        spkb)
+    
+    return share_SK, share_AD, x25519_public_key, x25519_private_key
 
-    return x25519_public_key
-
-def doubleRatchet():
-    global share_SK, share_AD, share_SPKB, private_key
-    alice_state = RatchetState(
-        RK=share_SK,
-        DHs=GENERATE_DH(),  # Alice's initial DH key pair
-        DHr=convert_SPKB(share_SPKB),  # Bob's initial DH public key
-        CKs=None,
-        CKr=None,
-        Ns=0,
-        Nr=0,
-        PN=0,
-        MKSKIPPED={}
-    )
-
-
-    alice = DoubleRatchetParticipant("Alice", share_SK, share_AD)
-    alice.state = alice_state
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect(('localhost', 23456))
-        alice.start_communication(s)
 
 if __name__ == "__main__":
-
-        # Generate Alice's identity key pair
-    ik_A_private = PrivateKey.generate()
-    ik_A_public = ik_A_private.public_key
-
-    private_key = ik_A_private
-
-    # Generate Alice's ephemeral key pair
-    ek_A_private = PrivateKey.generate()
-    ek_A_public = ek_A_private.public_key
-
-    # Define the server host and port
-    server_host = 'localhost'
-    server_port = 65432
-
-    # Create a socket connection to the server
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((server_host, server_port))
-    print(f"Connected to server at {server_host}:{server_port}")
-
-    # Request Bob's prekey bundle from the server
-    prekey_bundle = request_prekey_bundle(client_socket)
-    if prekey_bundle:
-        # Compute the shared secret with Bob
-        shared_secret, opk_id = compute_shared_secret(prekey_bundle)
-        share_SK = shared_secret
-        if shared_secret:
-            # Construct the initial message
-            message = "Hello, Bob!"
-            ciphertext = construct_initial_message(shared_secret, prekey_bundle, opk_id, message)
-            if ciphertext:
-                # Send the initial message to Bob
-                server_response = send_initial_message(client_socket, ciphertext)
-                if server_response:
-                    print("Alice's initial message sent to Bob")
-                    while True:
-                        user_input = input(
-                            "Enter 'send' to start DH messages or 'exit' to quit: ")
-                        if user_input.lower() == 'send':
-                            doubleRatchet()
-                        elif user_input.lower() == 'exit':
-                            print("Exiting...")
-                            break
-                        
-
+    asyncio.run(main())

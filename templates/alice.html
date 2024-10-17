@@ -4,81 +4,60 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alice's Messaging App</title>
-    <style>
-        #messages {
-            height: 300px;
-            overflow-y: auto;
-            border: 1px solid #ccc;
-            padding: 10px;
-            margin-bottom: 10px;
-        }
-    </style>
+    <title>Alice's Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
 </head>
 
 <body>
-    <h1>Alice's Messaging App</h1>
+    <h1>Alice's Chat</h1>
     <div id="messages"></div>
-    <form id="messageForm">
-        <input type="text" id="messageInput" placeholder="Enter your message">
-        <button type="submit">Send Message</button>
-    </form>
-    <div id="status"></div>
+    <input type="text" id="message-input" placeholder="Type a message...">
+    <button onclick="sendMessage()">Send</button>
 
     <script>
-        const messagesDiv = document.getElementById('messages');
-        const messageForm = document.getElementById('messageForm');
-        const messageInput = document.getElementById('messageInput');
-        const statusDiv = document.getElementById('status');
+        const socket = io();
+        const senderName = 'Alice';
 
-        function displayMessages(messages) {
-            messages.forEach(function(message) {
-                var p = document.createElement('p');
-                p.textContent = `${message.sender}: ${message.message}`;
-                messagesDiv.appendChild(p);
-            });
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        // Remove the 'connect' event listener
+        // socket.on('connect', () => {
+        //     console.log('Connected to server');
+        //     socket.emit('initialize_bob');
+        // });
+
+        // Add a new function to initialize Alice
+        function initializeAlice() {
+            console.log('Initializing Alice');
+            socket.emit('initialize_alice');
         }
 
-        function checkMessages() {
-            fetch('/check_messages')
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    displayMessages(data.messages);
-                } else {
-                    console.log(data.message);
-                }
-            });
-        }
+        // Call initializeAlice when the page loads
+        window.onload = initializeAlice;
 
-        // Display initial messages
-        displayMessages({{ messages|tojson }});
-
-        // Check for new messages every 5 seconds
-        setInterval(checkMessages, 5000);
-
-        messageForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            var message = messageInput.value;
-            fetch('/send_message', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: 'message=' + encodeURIComponent(message)
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    messageInput.value = '';
-                    displayMessages([{sender: 'Alice', message: message}]);
-                    statusDiv.innerText = data.message;
-                } else {
-                    statusDiv.innerText = data.message;
-                }
-            });
+        socket.on('initialization_complete', (data) => {
+            console.log('Alice initialized');
         });
+
+        socket.on('receive_message', (data) => {
+            const messagesDiv = document.getElementById('messages');
+            if (data.sender === 'System') {
+                messagesDiv.innerHTML += `<p><em>${data.message}</em></p>`;
+            } else if (data.sender !== senderName) {
+                messagesDiv.innerHTML += `<p><strong>${data.sender}:</strong> ${data.message}</p>`;
+            }
+        });
+
+        function sendMessage() {
+            const messageInput = document.getElementById('message-input');
+            const message = messageInput.value;
+            if (message) {
+                // Immediately display the message for the sender
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.innerHTML += `<p><strong>${senderName}:</strong> ${message}</p>`;
+                
+                socket.emit('send_message', { sender: senderName, message: message });
+                messageInput.value = '';
+            }
+        }
     </script>
 </body>
 

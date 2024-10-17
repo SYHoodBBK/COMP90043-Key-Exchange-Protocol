@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encrypted Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <h1>Encrypted Chat</h1>
+    <ul>
+        <li id="bob-link"><a href="/bob">Bob's Chat</a></li>
+        <li id="alice-link" style="display: none;"><a href="/alice">Alice's Chat</a></li>
+    </ul>
+
+    <script>
+        const socket = io();
+        
+        socket.on('bob_connected', () => {
+            document.getElementById('bob-link').style.display = 'none';
+            document.getElementById('alice-link').style.display = 'block';
+        });
+
+        // Check initial state
+        if ({{ bob_connected|tojson }}) {
+            document.getElementById('bob-link').style.display = 'none';
+            document.getElementById('alice-link').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
